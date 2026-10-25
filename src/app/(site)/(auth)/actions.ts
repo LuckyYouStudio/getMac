@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { createSession, destroySession, hashPassword, verifyPassword } from "@/lib/auth";
+import { findContactInfo, isReservedName } from "@/lib/contact-guard";
 
 export type FormState = { error?: string; ok?: string } | undefined;
 
@@ -25,7 +26,13 @@ export async function loginAction(_: FormState, fd: FormData): Promise<FormState
 }
 
 const registerSchema = z.object({
-  name: z.string().trim().min(1, "请填写昵称").max(30, "昵称最多 30 字"),
+  name: z
+    .string()
+    .trim()
+    .min(1, "请填写昵称")
+    .max(30, "昵称最多 30 字")
+    .refine((n) => !isReservedName(n), "昵称不能包含“官方”“客服”“管理员”等字样")
+    .refine((n) => !findContactInfo(n), "昵称里不能包含联系方式"),
   email: z.email("邮箱格式不正确"),
   password: z.string().min(8, "密码至少 8 位"),
 });

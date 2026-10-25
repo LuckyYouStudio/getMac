@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
+import { useKeepValuesSubmit } from "@/components/useKeepValuesSubmit";
 import { FormError } from "@/components/ui";
 import { loginAction, registerAction } from "./actions";
 
 export function AuthForm({ mode, next }: { mode: "login" | "register"; next: string }) {
   const [state, action, pending] = useActionState(mode === "login" ? loginAction : registerAction, undefined);
+  const submit = useKeepValuesSubmit(action);
   const q = next !== "/" ? `?next=${encodeURIComponent(next)}` : "";
   return (
-    <form action={action} className="space-y-4">
+    <form onSubmit={submit} className="space-y-4">
       <input type="hidden" name="next" value={next} />
       {mode === "register" && (
         <label className="block">

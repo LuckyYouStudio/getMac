@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { FAQ_CATEGORIES } from "@/lib/constants";
 import { Badge, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ErrorBanner } from "@/components/admin/ErrorBanner";
@@ -9,21 +10,27 @@ export const metadata = { title: "FAQ 管理" };
 
 export default async function FaqAdmin({ searchParams }: { searchParams: Promise<{ edit?: string; error?: string }> }) {
   const { edit, error } = await searchParams;
-  const faqs = await db.faq.findMany({ orderBy: [{ category: "asc" }, { sort: "asc" }] });
+  const all = await db.faq.findMany({ orderBy: { sort: "asc" } });
+  // 按前台的分类顺序排列，未知分类放最后
+  const rank = (c: string) => {
+    const i = FAQ_CATEGORIES.findIndex((x) => x.key === c);
+    return i < 0 ? FAQ_CATEGORIES.length : i;
+  };
+  const faqs = [...all].sort((a, b) => rank(a.category) - rank(b.category) || a.sort - b.sort);
   const editing = edit ? faqs.find((f) => f.id === edit) : undefined;
-  const categories = [...new Set(faqs.map((f) => f.category))];
+  const catLabel = (c: string) => FAQ_CATEGORIES.find((x) => x.key === c)?.label ?? c;
 
   return (
     <div>
       <PageHeader title="常见问题" desc="前台 /faq 页面与首页摘要使用这里的内容。" />
       <ErrorBanner error={error} />
-      <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="card divide-y divide-line">
           {faqs.map((f) => (
             <div key={f.id} className="flex items-start justify-between gap-4 p-4">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="info">{f.category}</Badge>
+                  <Badge tone="info">{catLabel(f.category)}</Badge>
                   {!f.published && <Badge>未发布</Badge>}
                   <span className="font-medium">{f.question}</span>
                 </div>
@@ -52,8 +59,9 @@ export default async function FaqAdmin({ searchParams }: { searchParams: Promise
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="label">分类</span>
-              <input name="category" list="faq-cats" className="input" defaultValue={editing?.category ?? "自营"} />
-              <datalist id="faq-cats">{categories.map((c) => <option key={c} value={c} />)}</datalist>
+              <select name="category" className="input" defaultValue={editing?.category ?? FAQ_CATEGORIES[0].key}>
+                {FAQ_CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+              </select>
             </label>
             <label className="block"><span className="label">排序</span><input name="sort" type="number" className="input" defaultValue={editing?.sort ?? faqs.length} /></label>
           </div>

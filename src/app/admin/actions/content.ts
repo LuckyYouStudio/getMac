@@ -17,7 +17,7 @@ export async function saveFaq(fd: FormData) {
   const data = {
     question: str(fd, "question"),
     answer: str(fd, "answer"),
-    category: str(fd, "category") || "通用",
+    category: str(fd, "category") || "machine",
     sort: Number(str(fd, "sort")) || 0,
     published: fd.get("published") === "on",
   };

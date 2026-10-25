@@ -1,5 +1,6 @@
 // GetMac 数据模型
 // SQLite 不支持 enum，状态字段用字符串，取值见 src/lib/constants.ts
+// JSON 数组字段（features / remoteMethods / checklist 等）以字符串存储，用 src/lib/json.ts 读写
 
 generator client {
   provider = "prisma-client-js"
@@ -17,10 +18,13 @@ model User {
   passwordHash String
   role         String   @default("USER") // USER | ADMIN
   wechat       String?
-  banned       Boolean  @default(false)
-  // 房东认证：NONE | PENDING | VERIFIED | REJECTED
-  hostStatus   String   @default("NONE")
-  hostIntro    String?
+  bio          String?  // 公开简介（房东主页展示）
+  banned       Boolean  @default(false) // 暂停：不能登录
+  restricted   Boolean  @default(false) // 受限：可回复已有对话，不能发起咨询/发布
+  // 官方房东计划
+  officialHost Boolean   @default(false)
+  hostAgreedAt DateTime?
+  payoutInfo   String?   // 收款信息（仅本人和管理员可见）
   createdAt    DateTime @default(now())
 
   orders        Order[]
@@ -32,37 +36,61 @@ model User {
   sentMessages  Message[]
   inquiriesAsRenter Inquiry[] @relation("renter")
   inquiriesAsHost   Inquiry[] @relation("host")
+  ownedMachines Machine[]
+  payouts       Payout[]
+  dealsProposed Deal[]    @relation("dealProposer")
+  reviewsWritten  Review[] @relation("reviewAuthor")
+  reviewsReceived Review[] @relation("reviewTarget")
+  blocking      Block[]   @relation("blocker")
+  blockedBy     Block[]   @relation("blocked")
 }
 
-// 自营方案：经济 / 标准 / 进阶
+// ───────────────────────── 自营 ─────────────────────────
+
+// 自营方案：经济 / 标准 / 进阶。三个周期各自定价，均存“月均价”（美元）
 model Plan {
-  id           String   @id @default(cuid())
-  slug         String   @unique
-  name         String
-  badge        String?
-  spec         String
-  priceMonthly Int      // 美元，整数
-  summary      String
-  featured     Boolean  @default(false)
-  active       Boolean  @default(true)
-  sort         Int      @default(0)
-  machines     Machine[]
-  orders       Order[]
+  id            String   @id @default(cuid())
+  slug          String   @unique // economy | standard | pro
+  name          String
+  badge         String?
+  spec          String
+  priceMonth    Int
+  priceQuarter  Int
+  priceYear     Int
+  summary       String
+  features      String   @default("[]") // JSON 字符串数组：本档权益
+  responseHours Int      @default(24)   // 工单回复时效（小时）
+  seats         String   @default("1 人") // 建议人数
+  xcodeLevel    String   @default("可用") // Xcode / 模拟器流畅度
+  featured      Boolean  @default(false)
+  active        Boolean  @default(true)
+  sort          Int      @default(0)
+  machines      Machine[]
+  orders        Order[]
+  restockAlerts RestockAlert[]
 }
 
-// 自营实体机，以美国城市命名
+// 实体机，以美国城市命名。ownerId 不为空表示由官方房东托管
 model Machine {
   id        String   @id @default(cuid())
   name      String   @unique // Austin / Boston ...
-  location  String   // 实际所在城市
+  location  String   // 展示用所在地，如“纽约 · 皇后区”
+  country   String   @default("US")
+  city      String?
   chip      String
   memory    Int
   storage   Int
-  // AVAILABLE | RESERVED | RENTED | MAINTENANCE
+  // ONBOARDING（官方房东登记、待上架）| AVAILABLE | RESERVED | RENTED | MAINTENANCE | RETIRED
   status    String   @default("AVAILABLE")
   notes     String?
   planId    String
   plan      Plan     @relation(fields: [planId], references: [id])
+  ownerId   String?
+  owner     User?    @relation(fields: [ownerId], references: [id])
+  checklist String   @default("{}") // JSON：上架清单勾选状态 { key: boolean }
+  heartbeatAt DateTime?            // 运维脚本最近一次上报
+  heartbeatToken String? @unique   // 运维脚本上报用的令牌
+  deliveryCredential String?       // 房东填写的交付凭据（仅管理员可见）
   orders    Order[]
   createdAt DateTime @default(now())
 }
@@ -70,8 +98,10 @@ model Machine {
 model Order {
   id            String    @id @default(cuid())
   no            String    @unique
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
+  // 游客下单时为空，凭 accessToken（浏览器 cookie + 专属链接）访问
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id])
+  accessToken   String    @unique @default(cuid())
   planId        String
   plan          Plan      @relation(fields: [planId], references: [id])
   machineId     String?
@@ -79,10 +109,13 @@ model Order {
   preferredName String?
   cycle         String    // MONTH | QUARTER | YEAR
   months        Int
-  amount        Int       // 美元
+  amount        Int       // 美元，本期实付
   deliveryEmail String
+  contactName   String?
   // PENDING | PAID | PROVISIONING | DELIVERED | EXPIRED | CANCELLED | REFUNDED
   status        String    @default("PENDING")
+  autoRenew     Boolean   @default(true)
+  renewedFromId String?   // 续费单指向原订单
   deliveryInfo  String?   // 交付的连接信息（管理员填写）
   adminNote     String?
   reserveUntil  DateTime
@@ -92,64 +125,166 @@ model Order {
   createdAt     DateTime  @default(now())
 }
 
-// C2C 出租方案（第三方房东发布）
-model Listing {
+// 缺货时的到货通知登记
+model RestockAlert {
   id           String   @id @default(cuid())
-  hostId       String
-  host         User     @relation(fields: [hostId], references: [id])
-  title        String
-  country      String
-  region       String?
-  city         String?
-  deviceModel  String   // Mac mini M4 / MacBook Air M2 ...
-  memory       Int
-  storage      Int
-  adminAccess  String   // YES | NO | NEGOTIABLE
-  network      String   // HOME | OFFICE | DATACENTER
-  currency     String   // USD | CNY
-  price        Int
-  minMonths    Int      @default(1)
-  firstPayment Int      @default(0)
-  deposit      Int      @default(0)
-  extraFees    String?
-  description  String
-  // PENDING | PUBLISHED | REJECTED | OFFLINE
-  status       String   @default("PENDING")
-  rejectReason String?
-  views        Int      @default(0)
-  confirmedAt  DateTime @default(now()) // 房东最近确认仍可租的时间
+  planId       String
+  plan         Plan     @relation(fields: [planId], references: [id])
+  phoneCountry String?
+  phone        String?
+  email        String?
+  wechat       String?
+  usage        String?
+  status       String   @default("OPEN") // OPEN | NOTIFIED | CLOSED
   createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  inquiries    Inquiry[]
+}
+
+// 联系我们 / 定制配置需求
+model Lead {
+  id           String   @id @default(cuid())
+  seq          Int      @unique // 给用户看的编号 #N
+  name         String
+  phoneCountry String?
+  phone        String?
+  email        String?
+  wechat       String?
+  teamSize     String
+  startWhen    String?
+  cycle        String?
+  plan         String?  // economy | standard | pro | custom | unsure
+  chip         String?
+  memory       String?
+  storage      String?
+  qty          Int?
+  term         String?
+  usage        String
+  status       String   @default("NEW") // NEW | CONTACTED | WON | CLOSED
+  note         String?
+  createdAt    DateTime @default(now())
+}
+
+// 官方房东月度结算
+model Payout {
+  id        String    @id @default(cuid())
+  hostId    String
+  host      User      @relation(fields: [hostId], references: [id])
+  month     String    // YYYY-MM
+  gross     Int       // 该房东机器当月客户实付（美元）
+  fee       Int       // 平台费
+  net       Int       // 应付房东
+  status    String    @default("PENDING") // PENDING | PAID
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([hostId, month])
+}
+
+// ───────────────────────── C2C 市场 ─────────────────────────
+
+// 出租方案（第三方房东发布，先发布后复查）
+model Listing {
+  id             String    @id @default(cuid())
+  hostId         String
+  host           User      @relation(fields: [hostId], references: [id])
+  title          String
+  // 配置
+  machineType    String    // Mac mini | MacBook Air | MacBook Pro | Mac Studio | iMac | 其他
+  chip           String    // M1 | M1 Pro | ... | M6 Max | 其他（见 CHIPS）
+  memory         Int
+  storage        Int
+  osVersion      String?
+  // 地点与网络
+  country        String    // 国家/地区代码，见 COUNTRIES
+  region         String?   // 州/省
+  city           String?
+  network        String    // HOME | OFFICE | DATACENTER
+  bandwidth      String?   // 房东自述，如 “1000M 下 / 50M 上”
+  // 使用条件
+  adminAccess    String    // YES | NO | NEGOTIABLE
+  remoteMethods  String    @default("[]") // JSON：UU/向日葵/ToDesk/RustDesk/VNC/SSH/Parsec/Jump/其他
+  ssh            Boolean   @default(false)
+  restart        String    @default("UNSTATED") // YES | NO | NEGOTIABLE | UNSTATED
+  selfInstall    Boolean   @default(true)
+  // 费用
+  currency       String    // USD | CNY
+  price          Int       // 月租
+  minMonths      Int       @default(1) // 1 | 3 | 6 | 12
+  firstPayment   Int       @default(0)
+  deposit        Int       @default(0)
+  extraFees      String?
+  paymentMethods String?
+  // 服务约定
+  supportHours   String?
+  deliveryNotes  String?
+  refundPolicy   String?
+  dataCleanup    String?
+  hostWebsite    String?
+  description    String
+  // 档期
+  availability   String    @default("AVAILABLE") // AVAILABLE | FROM_DATE | FULL
+  availableFrom  DateTime?
+  // DRAFT | PUBLISHED | NEEDS_CHANGES | PAUSED | EXPIRED | CLOSED | REMOVED
+  status         String    @default("DRAFT")
+  reviewNote     String?   // 管理员要求修改 / 下架原因
+  views          Int       @default(0)
+  confirmedAt    DateTime  @default(now()) // 房东最近确认仍可租的时间
+  expiresAt      DateTime  @default(now()) // confirmedAt + 14 天，过期后不再展示
+  publishedAt    DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  inquiries      Inquiry[]
 }
 
 // 求租帖
 model WantedPost {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id])
-  title        String
-  region       String?
-  budget       String?
-  requirements String
-  status       String   @default("OPEN") // OPEN | CLOSED | HIDDEN
-  createdAt    DateTime @default(now())
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  title         String
+  purpose       String   // 用途
+  chipMin       String?  // 最低芯片（见 CHIPS）
+  memMin        Int?
+  adminNeeded   Boolean  @default(false)
+  remoteMethods String   @default("[]")
+  country       String?
+  region        String?
+  budgetMin     Int?     // USD / 月
+  budgetMax     Int?
+  startDate     DateTime?
+  termMonths    Int      @default(1)
+  description   String
+  // OPEN | FILLED（已租到）| CLOSED | EXPIRED | HIDDEN
+  status        String   @default("OPEN")
+  confirmedAt   DateTime @default(now())
+  expiresAt     DateTime @default(now())
+  closedAt      DateTime?
+  createdAt     DateTime @default(now())
+  responses     Inquiry[]
 }
 
-// 站内咨询：一个租客对一个方案一条会话
+// 站内对话：租客咨询某个方案，或房东回应某条求租
 model Inquiry {
   id        String    @id @default(cuid())
-  listingId String
-  listing   Listing   @relation(fields: [listingId], references: [id])
+  listingId String?
+  listing   Listing?  @relation(fields: [listingId], references: [id])
+  wantedId  String?
+  wanted    WantedPost? @relation(fields: [wantedId], references: [id])
   renterId  String
   renter    User      @relation("renter", fields: [renterId], references: [id])
   hostId    String
   host      User      @relation("host", fields: [hostId], references: [id])
+  // 咨询时填写的结构化信息
+  purpose   String?
+  startMode String?   // ASAP | TBD | DATE
+  startDate DateTime?
+  term      String?
+  listingSnapshot String? // JSON：发起咨询时方案的报价快照
+  hostRepliedAt DateTime? // 房东首次回复时间（统计响应）
   messages  Message[]
+  deals     Deal[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-
-  @@unique([listingId, renterId])
 }
 
 model Message {
@@ -163,12 +298,61 @@ model Message {
   createdAt DateTime @default(now())
 }
 
+// 双方确认成交：一方发起，另一方确认
+model Deal {
+  id              String    @id @default(cuid())
+  inquiryId       String
+  inquiry         Inquiry   @relation(fields: [inquiryId], references: [id])
+  proposerId      String
+  proposer        User      @relation("dealProposer", fields: [proposerId], references: [id])
+  // PROPOSED | CONFIRMED | DECLINED | CANCELLED
+  status          String    @default("PROPOSED")
+  confirmedAt     DateTime?
+  hostDelivered   Boolean   @default(false)
+  renterConnected String?   // YES | NO（还连不上）
+  hidden          Boolean   @default(false) // 管理员不计入统计
+  createdAt       DateTime  @default(now())
+  reviews         Review[]
+}
+
+// 成交后 14 天内互评，双方都提交（或到期）后同时公开
+model Review {
+  id          String    @id @default(cuid())
+  dealId      String
+  deal        Deal      @relation(fields: [dealId], references: [id])
+  authorId    String
+  author      User      @relation("reviewAuthor", fields: [authorId], references: [id])
+  targetId    String
+  target      User      @relation("reviewTarget", fields: [targetId], references: [id])
+  rating      Int       // 1-5
+  body        String
+  reply       String?
+  publishedAt DateTime?
+  hidden      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  @@unique([dealId, authorId])
+}
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("blocker", fields: [blockerId], references: [id])
+  blockedId String
+  blocked   User     @relation("blocked", fields: [blockedId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
 model Report {
   id         String   @id @default(cuid())
   reporterId String
   reporter   User     @relation(fields: [reporterId], references: [id])
-  targetType String   // LISTING | WANTED | POST | USER
+  // LISTING | WANTED | POST | REPLY | MESSAGE | REVIEW | USER
+  targetType String
   targetId   String
+  category   String   @default("OTHER") // 见 REPORT_CATEGORIES
   reason     String
   status     String   @default("OPEN") // OPEN | RESOLVED | DISMISSED
   handleNote String?
@@ -179,12 +363,14 @@ model CommunityPost {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id])
+  board     String   @default("experience") // experience | network | hosting | feedback
   title     String
   body      String
-  hidden    Boolean  @default(false)
+  status    String   @default("PUBLISHED") // PENDING | PUBLISHED | HIDDEN
   pinned    Boolean  @default(false)
   replies   CommunityReply[]
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model CommunityReply {
@@ -194,15 +380,17 @@ model CommunityReply {
   userId    String
   user      User          @relation(fields: [userId], references: [id])
   body      String
-  hidden    Boolean       @default(false)
+  status    String        @default("PUBLISHED") // PENDING | PUBLISHED | HIDDEN
   createdAt DateTime      @default(now())
 }
+
+// ───────────────────────── 内容 / 统计 ─────────────────────────
 
 model Faq {
   id        String  @id @default(cuid())
   question  String
   answer    String
-  category  String  @default("通用")
+  category  String  @default("machine") // machine | usage | billing | market，见 FAQ_CATEGORIES
   sort      Int     @default(0)
   published Boolean @default(true)
 }

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { hashPassword, requireUser, verifyPassword } from "@/lib/auth";
+import { findContactInfo, isReservedName } from "@/lib/contact-guard";
 
 export type AccountState = { error?: string; ok?: string } | undefined;
 
@@ -10,9 +11,15 @@ export async function updateProfileAction(_: AccountState, fd: FormData): Promis
   const user = await requireUser("/account");
   const name = String(fd.get("name") ?? "").trim();
   const wechat = String(fd.get("wechat") ?? "").trim();
+  const bio = String(fd.get("bio") ?? "").trim();
   if (!name) return { error: "昵称不能为空" };
   if (name.length > 30) return { error: "昵称最多 30 字" };
-  await db.user.update({ where: { id: user.id }, data: { name, wechat: wechat || null } });
+  if (bio.length > 300) return { error: "简介最多 300 字" };
+  // 管理员账号可以使用“站务”等官方字样
+  if (user.role !== "ADMIN" && isReservedName(name)) return { error: "昵称不能包含“官方”“客服”“管理员”等字样" };
+  const hit = findContactInfo(name, bio);
+  if (hit) return { error: `公开资料里不能留联系方式（检测到${hit}），联系请走站内对话` };
+  await db.user.update({ where: { id: user.id }, data: { name, wechat: wechat || null, bio: bio || null } });
   revalidatePath("/", "layout");
   return { ok: "已保存" };
 }

@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { ORDER_STATUS } from "@/lib/constants";
+import { ORDER_STATUS, REPORT_CATEGORIES, REPORT_TARGETS } from "@/lib/constants";
 import { date, dateTime, usd } from "@/lib/format";
+import { expireStaleMarket } from "@/lib/market-lifecycle";
+import { releaseExpiredReservations } from "@/lib/reservations";
 import { PageHeader, Stat, StatusBadge } from "@/components/ui";
 import { BarChart } from "@/components/admin/BarChart";
+import { OrderBuyer } from "@/components/admin/Bits";
 
 export const metadata = { title: "数据看板" };
 
@@ -14,28 +17,32 @@ function last14Days() {
 }
 
 export default async function AdminDashboard() {
+  await Promise.all([expireStaleMarket(), releaseExpiredReservations()]);
   const days = last14Days();
   const since = new Date(Date.now() - 14 * 86400000);
   const [
-    users, hosts, active, revenue, machinesFree, machinesAll, published, pendingListings, openReports,
-    views, recentOrders, toProvision, toReview, hostApps, reports, latest,
+    users, officialHosts, restricted, active, revenue, machinesFree, machinesAll, published, needsChanges, openReports,
+    views, recentOrders, toProvision, onboarding, leads, restock, reports, latest, pendingPosts,
   ] = await Promise.all([
     db.user.count(),
-    db.user.count({ where: { hostStatus: "VERIFIED" } }),
+    db.user.count({ where: { officialHost: true } }),
+    db.user.count({ where: { OR: [{ restricted: true }, { banned: true }] } }),
     db.order.count({ where: { status: "DELIVERED" } }),
     db.order.aggregate({ _sum: { amount: true }, where: { status: { in: PAID } } }),
     db.machine.count({ where: { status: "AVAILABLE" } }),
-    db.machine.count(),
+    db.machine.count({ where: { status: { notIn: ["ONBOARDING", "RETIRED"] } } }),
     db.listing.count({ where: { status: "PUBLISHED" } }),
-    db.listing.count({ where: { status: "PENDING" } }),
+    db.listing.count({ where: { status: "NEEDS_CHANGES" } }),
     db.report.count({ where: { status: "OPEN" } }),
     db.pageView.findMany({ where: { day: { in: days } } }),
     db.order.findMany({ where: { createdAt: { gte: since } }, select: { createdAt: true } }),
-    db.order.findMany({ where: { status: { in: ["PAID", "PROVISIONING"] } }, include: { plan: true, user: true }, orderBy: { createdAt: "asc" }, take: 5 }),
-    db.listing.findMany({ where: { status: "PENDING" }, include: { host: true }, orderBy: { createdAt: "asc" }, take: 5 }),
-    db.user.findMany({ where: { hostStatus: "PENDING" }, orderBy: { createdAt: "asc" }, take: 5 }),
+    db.order.findMany({ where: { status: { in: ["PAID", "PROVISIONING"] } }, include: { plan: true }, orderBy: { createdAt: "asc" }, take: 5 }),
+    db.machine.findMany({ where: { status: "ONBOARDING" }, include: { owner: true }, orderBy: { createdAt: "asc" }, take: 5 }),
+    db.lead.findMany({ where: { status: "NEW" }, orderBy: { createdAt: "asc" }, take: 5 }),
+    db.restockAlert.findMany({ where: { status: "OPEN" }, include: { plan: true }, orderBy: { createdAt: "asc" }, take: 5 }),
     db.report.findMany({ where: { status: "OPEN" }, orderBy: { createdAt: "asc" }, take: 5 }),
     db.order.findMany({ include: { plan: true, user: true }, orderBy: { createdAt: "desc" }, take: 8 }),
+    db.communityPost.findMany({ where: { status: "PENDING" }, include: { user: true }, orderBy: { createdAt: "asc" }, take: 5 }),
   ]);
 
   const viewSeries = days.map((d) => ({ label: d, value: views.filter((v) => v.day === d).reduce((s, v) => s + v.count, 0) }));
@@ -47,11 +54,11 @@ export default async function AdminDashboard() {
       <PageHeader title="数据看板" desc={`截至 ${dateTime(new Date())}`} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-        <Stat label="注册用户" value={users} sub={`认证房东 ${hosts}`} />
+        <Stat label="注册用户" value={users} sub={`官方房东 ${officialHosts} · 受限/暂停 ${restricted}`} />
         <Stat label="使用中租约" value={active} sub="自营 · 已交付" />
         <Stat label="累计收入" value={usd(revenue._sum.amount ?? 0)} sub="已付款订单" />
-        <Stat label="空闲设备" value={`${machinesFree} / ${machinesAll}`} sub="可立即分配" />
-        <Stat label="市场方案" value={published} sub={`待审核 ${pendingListings}`} />
+        <Stat label="空闲设备" value={`${machinesFree} / ${machinesAll}`} sub={`待上架 ${onboarding.length}`} />
+        <Stat label="市场方案" value={published} sub={`需修改 ${needsChanges}`} />
         <Stat label="待处理举报" value={openReports} sub={openReports ? "请尽快处理" : "暂无"} />
       </div>
 
@@ -72,25 +79,35 @@ export default async function AdminDashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Todo title="待配机订单" href="/admin/orders?status=PAID" empty="没有待配机订单">
           {toProvision.map((o) => (
-            <TodoItem key={o.id} href={`/admin/orders/${o.id}`} title={`${o.no} · ${o.plan.name}`} sub={`${o.user.email} · ${ORDER_STATUS[o.status].label}`} />
+            <TodoItem key={o.id} href={`/admin/orders/${o.id}`} title={`${o.no} · ${o.plan.name}`} sub={`${o.deliveryEmail} · ${ORDER_STATUS[o.status].label}`} />
           ))}
         </Todo>
-        <Todo title="待审核方案" href="/admin/listings" empty="没有待审核方案">
-          {toReview.map((l) => (
-            <TodoItem key={l.id} href={`/admin/listings?status=PENDING#${l.id}`} title={l.title} sub={`${l.host.name} · ${date(l.createdAt)}`} />
+        <Todo title="官方房东待上架机器" href="/admin/machines?status=ONBOARDING" empty="没有待上架机器">
+          {onboarding.map((m) => (
+            <TodoItem key={m.id} href={`/admin/machines/${m.id}`} title={`${m.name} · ${m.chip}`} sub={`${m.owner?.name ?? "—"} · 登记于 ${date(m.createdAt)}`} />
           ))}
         </Todo>
-        <Todo title="房东认证申请" href="/admin/users?hostStatus=PENDING" empty="没有新的申请">
-          {hostApps.map((u) => (
-            <TodoItem key={u.id} href={`/admin/users/${u.id}`} title={u.name} sub={u.email} />
+        <Todo title="新线索" href="/admin/leads" empty="没有新线索">
+          {leads.map((l) => (
+            <TodoItem key={l.id} href="/admin/leads" title={`#${l.seq} ${l.name} · ${l.teamSize}`} sub={l.usage} />
+          ))}
+        </Todo>
+        <Todo title="到货通知" href="/admin/restock" empty="没有等待中的登记">
+          {restock.map((r) => (
+            <TodoItem key={r.id} href="/admin/restock" title={`${r.plan.name}档 · ${r.email ?? r.wechat ?? r.phone ?? "—"}`} sub={`${date(r.createdAt)} · ${r.usage ?? ""}`} />
           ))}
         </Todo>
         <Todo title="待处理举报" href="/admin/reports" empty="没有待处理举报">
           {reports.map((r) => (
-            <TodoItem key={r.id} href="/admin/reports" title={r.reason} sub={`${r.targetType} · ${date(r.createdAt)}`} />
+            <TodoItem key={r.id} href="/admin/reports" title={`${REPORT_CATEGORIES[r.category] ?? r.category} · ${r.reason}`} sub={`${REPORT_TARGETS[r.targetType] ?? r.targetType} · ${date(r.createdAt)}`} />
+          ))}
+        </Todo>
+        <Todo title="待审核帖子" href="/admin/community?status=PENDING" empty="没有待审核帖子">
+          {pendingPosts.map((p) => (
+            <TodoItem key={p.id} href="/admin/community?status=PENDING" title={p.title} sub={`${p.user.name} · ${date(p.createdAt)}`} />
           ))}
         </Todo>
       </div>
@@ -102,13 +119,13 @@ export default async function AdminDashboard() {
         </div>
         <table className="table">
           <thead>
-            <tr><th>订单号</th><th>用户</th><th>方案</th><th>金额</th><th>状态</th><th>下单时间</th></tr>
+            <tr><th>订单号</th><th>下单人</th><th>方案</th><th>金额</th><th>状态</th><th>下单时间</th></tr>
           </thead>
           <tbody>
             {latest.map((o) => (
               <tr key={o.id}>
                 <td><Link className="font-mono text-brand hover:underline" href={`/admin/orders/${o.id}`}>{o.no}</Link></td>
-                <td>{o.user.email}</td>
+                <td><OrderBuyer user={o.user} contactName={o.contactName} email={o.deliveryEmail} /></td>
                 <td>{o.plan.name} · {o.months} 个月</td>
                 <td>{usd(o.amount)}</td>
                 <td><StatusBadge map={ORDER_STATUS} value={o.status} /></td>

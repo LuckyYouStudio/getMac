@@ -7,26 +7,32 @@ export function MobileNav({
   nav,
   loggedIn,
   isAdmin,
+  hasGuestOrders,
 }: {
   nav: { href: string; label: string }[];
   loggedIn: boolean;
   isAdmin: boolean;
+  hasGuestOrders: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const links = [
     ...nav,
     ...(loggedIn
       ? [
-          { href: "/messages", label: "消息" },
+          { href: "/market/messages", label: "消息" },
           { href: "/orders", label: "我的订单" },
           { href: "/account", label: "账户" },
           ...(isAdmin ? [{ href: "/admin", label: "后台管理" }] : []),
         ]
-      : [{ href: "/login", label: "登录 / 注册" }]),
+      : [
+          ...(hasGuestOrders ? [{ href: "/orders", label: "我的订单" }] : []),
+          { href: "/login", label: "登录 / 注册" },
+        ]),
   ];
   return (
-    <div className="md:hidden">
-      <button className="btn-ghost px-2" aria-label="菜单" onClick={() => setOpen(!open)}>
+    <div className="flex items-center gap-2 xl:hidden">
+      <Link href="/pricing#plans" className="btn-primary btn-sm">立即开通</Link>
+      <button className="btn-ghost px-2" aria-label="菜单" aria-expanded={open} onClick={() => setOpen(!open)}>
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
           {open ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
         </svg>

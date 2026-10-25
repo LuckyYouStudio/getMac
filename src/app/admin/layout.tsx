@@ -8,34 +8,44 @@ export const metadata = { title: { default: "后台管理", template: `%s · ${S
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const admin = await requireAdmin();
-  const [pendingListings, openReports, pendingHosts, toProvision] = await Promise.all([
-    db.listing.count({ where: { status: "PENDING" } }),
-    db.report.count({ where: { status: "OPEN" } }),
-    db.user.count({ where: { hostStatus: "PENDING" } }),
-    db.order.count({ where: { status: { in: ["PAID", "PROVISIONING"] } } }),
-  ]);
+  const [toProvision, newLeads, openRestock, onboarding, pendingPayouts, needsChanges, openReports, pendingPosts, proposedDeals] =
+    await Promise.all([
+      db.order.count({ where: { status: { in: ["PAID", "PROVISIONING"] } } }),
+      db.lead.count({ where: { status: "NEW" } }),
+      db.restockAlert.count({ where: { status: "OPEN" } }),
+      db.machine.count({ where: { status: "ONBOARDING" } }),
+      db.payout.count({ where: { status: "PENDING" } }),
+      db.listing.count({ where: { status: "NEEDS_CHANGES" } }),
+      db.report.count({ where: { status: "OPEN" } }),
+      db.communityPost.count({ where: { status: "PENDING" } }),
+      db.deal.count({ where: { status: "PROPOSED" } }),
+    ]);
 
   const groups: NavGroup[] = [
     { title: "概览", items: [{ href: "/admin", label: "数据看板" }] },
     {
       title: "自营业务",
       items: [
-        { href: "/admin/machines", label: "设备" },
-        { href: "/admin/plans", label: "方案" },
         { href: "/admin/orders", label: "订单", count: toProvision },
+        { href: "/admin/machines", label: "设备", count: onboarding },
+        { href: "/admin/plans", label: "方案" },
+        { href: "/admin/restock", label: "到货通知", count: openRestock },
+        { href: "/admin/leads", label: "线索", count: newLeads },
+        { href: "/admin/payouts", label: "官方房东结算", count: pendingPayouts },
       ],
     },
     {
       title: "C2C 市场",
       items: [
-        { href: "/admin/listings", label: "方案审核", count: pendingListings },
+        { href: "/admin/listings", label: "出租方案", count: needsChanges },
         { href: "/admin/wanted", label: "求租帖" },
         { href: "/admin/reports", label: "举报", count: openReports },
-        { href: "/admin/community", label: "交流区" },
-        { href: "/admin/inquiries", label: "咨询记录" },
+        { href: "/admin/community", label: "交流区", count: pendingPosts },
+        { href: "/admin/inquiries", label: "对话记录" },
+        { href: "/admin/deals", label: "成交与评价", count: proposedDeals },
       ],
     },
-    { title: "用户", items: [{ href: "/admin/users", label: "用户与房东", count: pendingHosts }] },
+    { title: "用户", items: [{ href: "/admin/users", label: "用户与房东" }] },
     {
       title: "内容",
       items: [

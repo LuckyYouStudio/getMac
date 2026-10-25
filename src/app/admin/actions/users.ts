@@ -9,18 +9,32 @@ const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 function refresh(id: string) {
   revalidatePath("/admin", "layout");
   revalidatePath(`/admin/users/${id}`);
+  revalidatePath("/market", "layout");
 }
 
+/** 暂停：无法登录，发布中的方案下架 */
 export async function setBanned(fd: FormData) {
   const admin = await requireAdmin();
   const id = str(fd, "id");
-  if (id === admin.id) return; // 不能封禁自己
-  const banned = str(fd, "banned") === "1";
+  if (id === admin.id) return; // 不能暂停自己
+  const banned = str(fd, "value") === "1";
   await db.user.update({ where: { id }, data: { banned } });
-  // 封禁时下架其发布中的方案
-  if (banned) await db.listing.updateMany({ where: { hostId: id, status: "PUBLISHED" }, data: { status: "OFFLINE" } });
+  if (banned) {
+    await db.listing.updateMany({
+      where: { hostId: id, status: { in: ["PUBLISHED", "PAUSED"] } },
+      data: { status: "REMOVED", reviewNote: "账号已被暂停" },
+    });
+  }
   refresh(id);
-  revalidatePath("/market", "layout");
+}
+
+/** 受限：可回复已有对话，不能发起咨询、发布方案或求租 */
+export async function setRestricted(fd: FormData) {
+  const admin = await requireAdmin();
+  const id = str(fd, "id");
+  if (id === admin.id) return;
+  await db.user.update({ where: { id }, data: { restricted: str(fd, "value") === "1" } });
+  refresh(id);
 }
 
 export async function setRole(fd: FormData) {
@@ -32,12 +46,11 @@ export async function setRole(fd: FormData) {
   refresh(id);
 }
 
-export async function reviewHost(fd: FormData) {
+export async function setOfficialHost(fd: FormData) {
   await requireAdmin();
   const id = str(fd, "id");
-  const status = str(fd, "hostStatus");
-  if (!["VERIFIED", "REJECTED", "NONE"].includes(status)) return;
-  await db.user.update({ where: { id }, data: { hostStatus: status } });
+  const on = str(fd, "value") === "1";
+  await db.user.update({ where: { id }, data: { officialHost: on, ...(on ? {} : { hostAgreedAt: null }) } });
   refresh(id);
-  revalidatePath("/market", "layout");
+  revalidatePath("/ops");
 }

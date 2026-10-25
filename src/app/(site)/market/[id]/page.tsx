@@ -1,190 +1,200 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { trackView } from "@/lib/track";
-import { ADMIN_ACCESS, HOST_STATUS, LISTING_STATUS, NETWORK } from "@/lib/constants";
-import { ago, date, money } from "@/lib/format";
-import { Badge, CheckIcon, Notice, ShieldIcon, StatusBadge } from "@/components/ui";
-import { SubmitButton } from "@/components/SubmitButton";
-import { location } from "@/components/market/ListingCard";
-import { ReportForm, ReportResult } from "@/components/market/ReportForm";
-import { inquireAction } from "../actions";
+import { expireStaleMarket } from "@/lib/market-lifecycle";
+import { parseList } from "@/lib/json";
+import { ADMIN_ACCESS, LISTING_STATUS, NETWORK, RESTART } from "@/lib/constants";
+import { date, money } from "@/lib/format";
+import { Badge, Notice, StatusBadge } from "@/components/ui";
+import { Flash } from "@/components/market/Flash";
+import { HostCard } from "@/components/market/HostCard";
+import { InquiryForm } from "@/components/market/InquiryForm";
+import { ReportForm } from "@/components/market/ReportForm";
+import { availabilityLabel, availabilityTone, fee, location, priceLine } from "@/components/market/labels";
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const l = await db.listing.findUnique({ where: { id }, select: { title: true } });
+  return { title: l?.title ?? "出租方案" };
+}
+
+const PUBLIC = ["PUBLISHED", "PAUSED"];
 
 const CHECKLIST = [
-  "机器实际在哪座城市？用的是家庭宽带还是办公网络？",
-  "给的是管理员账号还是标准用户？能不能自己装软件？",
-  "交付方式是什么（UU 远程、Tailscale、SSH）？多久能交付？",
-  "停电、死机、断网时谁来处理，一般多久恢复？",
-  "到期或提前退租时，数据怎么清除？押金怎么退？",
-  "除了月租，还有没有其他费用？",
+  "机器具体在哪个城市，用的什么网络，有没有 UPS",
+  "给不给管理员权限，能不能自己装软件",
+  "用什么方式交付（UU / SSH / 其他），首次连接谁来协助",
+  "停电、死机、断网时多久能恢复，联系谁",
+  "首期、押金怎么付，什么情况下退",
+  "到期后数据怎么处理，会不会整盘抹除",
 ];
 
-export default async function ListingDetail({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ err?: string; report?: string }>;
-}) {
-  const { id } = await params;
-  const sp = await searchParams;
-  const user = await getCurrentUser();
-  const listing = await db.listing.findUnique({
-    where: { id },
-    include: {
-      host: { select: { id: true, name: true, hostStatus: true, hostIntro: true, createdAt: true, _count: { select: { listings: { where: { status: "PUBLISHED" } } } } } },
-    },
-  });
-  if (!listing) notFound();
-  const isOwner = user?.id === listing.hostId;
-  const isAdmin = user?.role === "ADMIN";
-  if (listing.status !== "PUBLISHED" && !isOwner && !isAdmin) notFound();
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="card p-5">
+      <h2 className="mb-3 font-semibold">{title}</h2>
+      <dl className="grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-2">{children}</dl>
+    </section>
+  );
+}
 
-  if (listing.status === "PUBLISHED" && !isOwner) {
-    await db.listing.update({ where: { id }, data: { views: { increment: 1 } } });
-    await trackView("/market/listing");
+function Row({ k, v, self }: { k: string; v: ReactNode; self?: boolean }) {
+  return (
+    <div className="flex justify-between gap-3 border-b border-line/70 pb-2 sm:block sm:border-0 sm:pb-0">
+      <dt className="text-muted">{k}</dt>
+      <dd className="text-right sm:mt-0.5 sm:text-left">
+        {v || "未填写"}
+        {self && <span className="ml-1 text-xs text-muted">房东自述</span>}
+      </dd>
+    </div>
+  );
+}
+
+export default async function ListingDetail({
+  params, searchParams,
+}: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
+  const [{ id }, sp] = await Promise.all([params, searchParams]);
+  await expireStaleMarket();
+  const [l, user] = await Promise.all([
+    db.listing.findUnique({ where: { id }, include: { host: true } }),
+    getCurrentUser(),
+  ]);
+  if (!l) notFound();
+  const isOwner = user?.id === l.hostId;
+  const isAdmin = user?.role === "ADMIN";
+  if (!PUBLIC.includes(l.status) && !isOwner && !isAdmin) notFound();
+
+  if (!isOwner && l.status === "PUBLISHED") {
+    await Promise.all([
+      db.listing.update({ where: { id }, data: { views: { increment: 1 } } }),
+      trackView("/market/listing"),
+    ]);
   }
 
-  const existing = user && !isOwner
-    ? await db.inquiry.findUnique({ where: { listingId_renterId: { listingId: id, renterId: user.id } } })
-    : null;
+  const existing = user && !isOwner ? await db.inquiry.findFirst({ where: { listingId: id, renterId: user.id }, select: { id: true } }) : null;
+  const remote = parseList(l.remoteMethods);
+  const back = `/market/${id}`;
+  const disk = (n: number) => (n >= 1024 ? `${n / 1024}TB` : `${n}GB`);
 
-  const fee = (n: number) => (n > 0 ? money(n, listing.currency) : "无");
-  const rows: [string, string][] = [
-    ["所在地区", location(listing) || "—"],
-    ["设备型号", listing.deviceModel],
-    ["内存 / 硬盘", `${listing.memory}GB / ${listing.storage >= 1024 ? `${listing.storage / 1024}TB` : `${listing.storage}GB`}`],
-    ["账号权限", ADMIN_ACCESS[listing.adminAccess]],
-    ["网络环境", NETWORK[listing.network]],
-    ["月租", `${money(listing.price, listing.currency)} / 月`],
-    ["最短租期", `${listing.minMonths} 个月`],
-    ["首期", fee(listing.firstPayment)],
-    ["押金", fee(listing.deposit)],
-    ["额外费用", listing.extraFees || "无"],
-  ];
+  let inquiryBox: ReactNode;
+  if (isOwner) {
+    inquiryBox = (
+      <div className="space-y-2 text-sm">
+        <p className="text-ink-soft">这是你发布的方案。</p>
+        <Link href={`/market/${id}/edit`} className="btn-outline w-full">编辑方案</Link>
+        <Link href="/market/mine" className="btn-ghost w-full">管理我的方案</Link>
+      </div>
+    );
+  } else if (existing) {
+    inquiryBox = <Link href={`/market/messages/${existing.id}`} className="btn-primary w-full">继续对话</Link>;
+  } else if (l.status === "PAUSED") {
+    inquiryBox = <p className="text-sm text-muted">房东暂停了新的咨询，已有对话不受影响。</p>;
+  } else if (l.availability === "FULL") {
+    inquiryBox = <p className="text-sm text-muted">房东标注暂无空位，暂时不能咨询。可以先<Link href="/market/wanted/new" className="text-brand hover:underline">发一条求租</Link>。</p>;
+  } else if (!user) {
+    inquiryBox = (
+      <div className="space-y-2 text-sm">
+        <p className="text-ink-soft">登录后可以在站内向房东咨询，咨询不会产生费用。</p>
+        <Link href={`/login?next=${encodeURIComponent(back)}`} className="btn-primary w-full">登录后咨询</Link>
+      </div>
+    );
+  } else {
+    inquiryBox = <InquiryForm listingId={id} />;
+  }
 
   return (
     <div className="space-y-6">
       <Link href="/market" className="text-sm text-muted hover:text-brand">← 返回找设备</Link>
+      <Flash ok={sp.ok} err={sp.err} />
 
-      {listing.status !== "PUBLISHED" && (
+      {!PUBLIC.includes(l.status) && (
         <Notice tone="info">
-          该方案当前状态：<StatusBadge map={LISTING_STATUS} value={listing.status} />，仅房东本人和管理员可见。
-          {listing.rejectReason && <span className="mt-1 block">未通过原因：{listing.rejectReason}</span>}
+          当前状态：<StatusBadge map={LISTING_STATUS} value={l.status} />，只有你{isAdmin && !isOwner ? "（管理员）" : ""}能看到这个页面。
+          {l.reviewNote && <span className="mt-1 block">平台说明：{l.reviewNote}</span>}
         </Notice>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-6">
-          <div className="card p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">{listing.title}</h1>
-                <p className="mt-1 text-sm text-muted">
-                  {location(listing)} · {listing.deviceModel} · 浏览 {listing.views} 次 · {ago(listing.confirmedAt)}确认仍可租
-                </p>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-semibold text-navy">{money(listing.price, listing.currency)}</div>
-                <div className="text-sm text-muted">每月</div>
-              </div>
-            </div>
-            <dl className="mt-6 grid gap-x-8 gap-y-3 border-t border-line pt-5 text-sm sm:grid-cols-2">
-              {rows.map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-4 border-b border-dashed border-line pb-2">
-                  <dt className="text-muted">{k}</dt>
-                  <dd className="text-right font-medium text-ink">{v}</dd>
-                </div>
-              ))}
-            </dl>
-            <p className="mt-3 text-xs text-muted">以上信息均为房东自述，GetMac 未做核验。</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">{l.title}</h1>
+          <p className="mt-1 text-sm text-muted">{location(l)} · {l.machineType} {l.chip}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Badge tone={availabilityTone(l)}>{availabilityLabel(l)}</Badge>
+            {l.status === "PAUSED" && <Badge tone="info">暂停新咨询</Badge>}
+            <Badge>{date(l.confirmedAt)} 房东确认仍可租</Badge>
           </div>
+        </div>
+        <div className="text-right">
+          <div className="text-3xl font-semibold text-navy">{money(l.price, l.currency)}<span className="text-base font-normal text-muted"> / 月</span></div>
+          <p className="mt-1 max-w-sm text-sm text-muted">{priceLine(l)}</p>
+        </div>
+      </div>
 
-          <div className="card p-6">
-            <h2 className="font-semibold">房东的说明</h2>
-            <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-ink-soft">{listing.description}</div>
-          </div>
-
-          <div className="card p-6">
-            <h2 className="flex items-center gap-2 font-semibold"><ShieldIcon className="h-5 w-5 text-safe" />问清楚这些再付款</h2>
-            <ul className="mt-3 space-y-2 text-sm text-ink-soft">
-              {CHECKLIST.map((c) => (
-                <li key={c} className="flex gap-2"><CheckIcon className="mt-1 h-3.5 w-3.5 shrink-0 text-safe" />{c}</li>
-              ))}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="space-y-4">
+          <Section title="配置">
+            <Row k="机型" v={l.machineType} self />
+            <Row k="芯片" v={l.chip} self />
+            <Row k="内存 / 硬盘" v={`${l.memory}GB / ${disk(l.storage)}`} self />
+            <Row k="系统版本" v={l.osVersion} self />
+          </Section>
+          <Section title="地点与网络">
+            <Row k="所在地" v={location(l)} />
+            <Row k="网络类型" v={NETWORK[l.network]} self />
+            <Row k="带宽" v={l.bandwidth} self />
+          </Section>
+          <Section title="使用条件">
+            <Row k="使用方式" v="整机独占，按月起租" />
+            <Row k="权限" v={ADMIN_ACCESS[l.adminAccess]} />
+            <Row k="远程方式" v={remote.join(" / ")} />
+            <Row k="SSH" v={l.ssh ? "支持" : "不支持"} />
+            <Row k="远程重启" v={RESTART[l.restart]} />
+            <Row k="自行安装软件" v={l.selfInstall ? "允许" : "需先和房东确认"} />
+          </Section>
+          <Section title="费用">
+            <Row k="月租" v={money(l.price, l.currency)} />
+            <Row k="最短租期" v={`${l.minMonths} 个月`} />
+            <Row k="首期" v={money(l.firstPayment, l.currency)} />
+            <Row k="押金" v={fee(l.deposit, l.currency)} />
+            <Row k="额外费用" v={l.extraFees || "无"} />
+            <Row k="付款方式" v={l.paymentMethods} />
+          </Section>
+          <Section title="服务约定">
+            <Row k="响应时间" v={l.supportHours} />
+            <Row k="交付说明" v={l.deliveryNotes} />
+            <Row k="退款约定" v={l.refundPolicy} />
+            <Row k="到期数据处理" v={l.dataCleanup} />
+            {l.hostWebsite && <Row k="房东网站" v={<a href={l.hostWebsite} target="_blank" rel="noopener noreferrer nofollow" className="text-brand hover:underline">{l.hostWebsite}</a>} />}
+          </Section>
+          <section className="card p-5">
+            <h2 className="mb-2 font-semibold">房东的说明</h2>
+            <p className="whitespace-pre-wrap text-sm leading-7 text-ink-soft">{l.description}</p>
+          </section>
+          <section className="card p-5">
+            <h2 className="font-semibold">付款之前，先问清楚这些</h2>
+            <ul className="mt-3 space-y-1.5 text-sm text-ink-soft">
+              {CHECKLIST.map((c) => <li key={c} className="flex gap-2"><span className="text-safe">✓</span>{c}</li>)}
             </ul>
+            <Link href="/guides/questions-before-renting" className="mt-3 inline-block text-sm text-brand hover:underline">完整清单 →</Link>
+          </section>
+          <Notice tone="warn">
+            方案内容由房东自行填写，GetMac 不核验设备，不经手租金。第一次合作请按月付，不要大额预付；有人要求站外私下联系或先付大额款项，请提高警惕并举报。
+          </Notice>
+          <div className="flex justify-between text-xs text-muted">
+            <span>浏览 {l.views} 次 · {date(l.publishedAt ?? l.createdAt)} 发布</span>
+            {!isOwner && <ReportForm targetType="LISTING" targetId={id} returnTo={back} loggedIn={!!user} label="举报这个方案" />}
           </div>
         </div>
 
         <aside className="space-y-4">
           <div className="card p-5">
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-brand-soft font-semibold text-brand">
-                {listing.host.name.slice(0, 1).toUpperCase()}
-              </span>
-              <div>
-                <div className="font-medium">{listing.host.name}</div>
-                <StatusBadge map={HOST_STATUS} value={listing.host.hostStatus} />
-              </div>
-            </div>
-            {listing.host.hostIntro && <p className="mt-3 text-sm text-ink-soft">{listing.host.hostIntro}</p>}
-            <p className="mt-3 text-xs text-muted">
-              {date(listing.host.createdAt)} 加入 · 发布中方案 {listing.host._count.listings} 个
-            </p>
+            <h2 className="mb-3 font-semibold">向房东咨询</h2>
+            {inquiryBox}
           </div>
-
-          <div className="card p-5">
-            <h2 className="font-semibold">站内咨询房东</h2>
-            {isOwner ? (
-              <div className="mt-3 space-y-3 text-sm text-muted">
-                <p>这是你发布的方案。</p>
-                <Link href={`/market/${listing.id}/edit`} className="btn-outline w-full">编辑方案</Link>
-              </div>
-            ) : existing ? (
-              <div className="mt-3 space-y-3 text-sm text-muted">
-                <p>你已经和房东聊过这台机器。</p>
-                <Link href={`/messages/${existing.id}`} className="btn-primary w-full">继续对话</Link>
-              </div>
-            ) : listing.status !== "PUBLISHED" ? (
-              <p className="mt-3 text-sm text-muted">方案未发布，暂不可咨询。</p>
-            ) : (
-              <form action={inquireAction} className="mt-3 space-y-3">
-                <input type="hidden" name="listingId" value={listing.id} />
-                <textarea
-                  name="body"
-                  required
-                  rows={5}
-                  maxLength={2000}
-                  className="input"
-                  defaultValue={`你好，我对「${listing.title}」感兴趣。想确认一下：交付方式和时间？是否支持按月付？`}
-                />
-                {sp.err === "empty" && <p className="text-xs text-danger">请填写咨询内容</p>}
-                {user ? (
-                  <SubmitButton className="btn-primary w-full" pendingText="发送中…">发送咨询</SubmitButton>
-                ) : (
-                  <Link href={`/login?next=/market/${listing.id}`} className="btn-primary w-full">登录后咨询</Link>
-                )}
-              </form>
-            )}
-            <p className="mt-3 text-xs leading-5 text-muted">
-              请尽量在站内沟通并保留记录。不要在站外向陌生人大额转账。
-            </p>
-          </div>
-
-          <Notice tone="warn">
-            第三方房东的方案，GetMac 不经手租金、不对交付和售后负责。首次合作建议按月付。
-          </Notice>
-
-          {!isOwner && (
-            <div className="card space-y-2 p-4">
-              <ReportResult value={sp.report} />
-              <ReportForm targetType="LISTING" targetId={listing.id} returnTo={`/market/${listing.id}`} label="发现问题？举报这个方案" />
-            </div>
-          )}
-          <div className="flex flex-wrap gap-2 text-xs text-muted">
-            <Badge tone="info">平台审核后展示</Badge>
-            <Link href="/market/rules" className="hover:text-brand">市场规则 →</Link>
-          </div>
+          <HostCard host={l.host} />
         </aside>
       </div>
     </div>
