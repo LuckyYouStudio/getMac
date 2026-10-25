@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/*
+ * 安全感配色：深海军蓝做主色（稳重、可信），
+ * 常青绿做“已验证/安全”提示，暖白底降低冷感。
+ */
+@theme {
+  --color-ink: #0f1f33;
+  --color-ink-soft: #3b4a5e;
+  --color-muted: #6b7a8d;
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
+  --color-bg: #f6f8fb;
+  --color-surface: #ffffff;
+  --color-surface-2: #eef3f9;
+
+  --color-brand: #1d4f91;
+  --color-brand-dark: #153a6b;
+  --color-brand-soft: #e6eef9;
+  --color-navy: #0b2545;
+
+  --color-safe: #0f766e;
+  --color-safe-soft: #e0f2ef;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf3e2;
+  --color-danger: #b42318;
+  --color-danger-soft: #fdecea;
+
+  --font-sans: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --radius-card: 14px;
+  --shadow-card: 0 1px 2px rgb(15 31 51 / 0.04), 0 4px 16px rgb(15 31 51 / 0.05);
+}
+
+html { color-scheme: light; }
+/* 网格子项默认 min-width:auto，长标题会把手机端撑出横向滚动 */
+.grid > * { min-width: 0; }
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .container-page { @apply mx-auto w-full max-w-6xl px-4 sm:px-6; }
+  .card { @apply rounded-[var(--radius-card)] border border-line bg-surface shadow-[var(--shadow-card)]; }
+
+  .btn, .btn-primary, .btn-safe, .btn-outline, .btn-ghost, .btn-danger {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary { @apply bg-brand text-white hover:bg-brand-dark; }
+  .btn-safe { @apply bg-safe text-white hover:brightness-95; }
+  .btn-outline { @apply border border-line-strong bg-surface text-ink hover:border-brand hover:text-brand; }
+  .btn-ghost { @apply text-ink-soft hover:bg-surface-2; }
+  .btn-danger { @apply border border-danger/30 bg-surface text-danger hover:bg-danger-soft; }
+  .btn-sm { @apply px-2.5 py-1 text-xs; }
+  .btn-lg { @apply px-6 py-3 text-base; }
+
+  .input { @apply w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/15; }
+  .label { @apply mb-1 block text-sm font-medium text-ink-soft; }
+  .hint { @apply mt-1 text-xs text-muted; }
+
+  .table { @apply w-full text-left text-sm; }
+  .table th { @apply border-b border-line bg-surface-2 px-3 py-2 text-xs font-medium text-muted; }
+  .table td { @apply border-b border-line px-3 py-2.5 align-middle; }
+  .table tr:last-child td { @apply border-b-0; }
+
+  .eyebrow { @apply text-xs font-semibold tracking-[0.18em] text-safe uppercase; }
+  .prose-gm { @apply space-y-3 leading-7 text-ink-soft; }
+  .prose-gm h2 { @apply mt-8 text-lg font-semibold text-ink; }
+  .prose-gm ul { @apply list-disc space-y-1 pl-5; }
+}
