@@ -4,7 +4,7 @@ export const SITE = {
   name: "GetMac",
   slogan: "你的远程 Mac，有人照看",
   email: "shuangliu.cad@gmail.com",
-  wechat: "getmac-help",
+  wechat: "leahfather",
   usdToCny: 7.0,
 };
 
