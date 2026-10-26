@@ -10,7 +10,7 @@ import { joinOfficialHostAction } from "./actions";
 export const metadata = { title: "成为官方房东" };
 
 const YOU = [
-  "提供一台属于你的 Mac mini，放在美国的家里或办公室",
+  "提供一台属于你的 Mac mini，放在大温哥华地区的家里或办公室",
   "保持通电和有线网络，接好 UPS",
   "机器卡死或断网时，按我们的请求在当地重启（通常 4 小时内）",
   "按清单完成初始设置，安装运维脚本",
@@ -32,7 +32,7 @@ const PREP = [
   "UPS 不间断电源",
   "有线宽带，上行 20M 以上，最好有公网 IPv4 或 IPv6",
   "一个不常挪动、通风良好的位置",
-  "能收美元的账户（PayPal、Wise 或美国银行账户）",
+  "能收美元的账户（PayPal、Wise 或加拿大银行账户）",
 ];
 const FAQ = [
   ["机器的所有权归谁？", "始终归你。你可以提前 30 天通知后退出，我们在租期结束后抹盘并移交。"],
@@ -169,7 +169,7 @@ export default async function JoinPage({ searchParams }: { searchParams: Promise
                   ["收款", "我们收款，月结给你", "你和租客直接结算"],
                   ["售后与交付", "我们负责", "你自己负责"],
                   ["平台费用", `租出月份每台 $${OFFICIAL_HOST_FEE}/月`, "免费发布"],
-                  ["机器要求", "Mac mini，放在美国，24 小时在线", "不限型号和地区"],
+                  ["机器要求", "Mac mini，放在大温哥华地区，24 小时在线", "不限型号和地区"],
                 ].map(([k, a, b]) => (
                   <tr key={k}><td className="text-muted">{k}</td><td>{a}</td><td>{b}</td></tr>
                 ))}

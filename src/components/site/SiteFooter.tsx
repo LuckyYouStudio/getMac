@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { SITE } from "@/lib/constants";
 import { Logo } from "./Logo";
-import { NyClock } from "./NyClock";
+import { LocalClock } from "./LocalClock";
 import { CopyButton } from "./CopyButton";
 
 const COLS = [
@@ -41,7 +41,7 @@ export function SiteFooter() {
               <CopyButton text={SITE.wechat} label="复制" className="rounded-md border border-white/15 px-2 py-0.5 text-xs text-slate-200 hover:bg-white/10" />
             </div>
           </div>
-          <p className="mt-4 text-xs text-slate-400"><NyClock /></p>
+          <p className="mt-4 text-xs text-slate-400"><LocalClock /></p>
         </div>
         {COLS.map((c) => (
           <div key={c.title}>

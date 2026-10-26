@@ -54,7 +54,7 @@ async function main() {
     data: {
       email: "official@getmac.test", name: "Queens Mini", passwordHash: userPw,
       officialHost: true, hostAgreedAt: daysAgo(60), payoutInfo: "PayPal: host@example.com",
-      bio: "皇后区家里有两台 Mac mini，UPS + 双宽带。", createdAt: daysAgo(70),
+      bio: "本拿比家里有两台 Mac mini，UPS + 双宽带。", createdAt: daysAgo(70),
     },
   });
 
@@ -115,22 +115,22 @@ async function main() {
 
   // 经济档全部租出，用来演示“缺货 / 到货通知”
   const machineDefs: [string, string, string, number, string, string, User | null][] = [
-    ["Austin", "纽约 · 皇后区", "M2", 16, "economy", "RENTED", null],
-    ["Boston", "纽约 · 曼哈顿", "M1", 8, "economy", "RENTED", null],
-    ["Chicago", "纽约 · 布鲁克林", "M4", 16, "standard", "AVAILABLE", null],
-    ["Denver", "纽约 · 曼哈顿", "M4", 16, "standard", "RENTED", null],
-    ["Miami", "新泽西 · 泽西城", "M4", 16, "standard", "AVAILABLE", official],
-    ["Nashville", "纽约 · 皇后区", "M4", 16, "standard", "MAINTENANCE", null],
-    ["Phoenix", "纽约 · 布鲁克林", "M6", 24, "pro", "AVAILABLE", null],
-    ["Portland", "纽约 · 曼哈顿", "M6", 16, "pro", "RENTED", official],
-    ["Seattle", "新泽西 · 泽西城", "M6", 24, "pro", "AVAILABLE", null],
+    ["Austin", "温哥华 · 东区", "M2", 16, "economy", "RENTED", null],
+    ["Boston", "温哥华 · 市中心", "M1", 8, "economy", "RENTED", null],
+    ["Chicago", "温哥华 · 基斯兰奴", "M4", 16, "standard", "AVAILABLE", null],
+    ["Denver", "温哥华 · 市中心", "M4", 16, "standard", "RENTED", null],
+    ["Miami", "本拿比 · 铁道镇", "M4", 16, "standard", "AVAILABLE", official],
+    ["Nashville", "温哥华 · 东区", "M4", 16, "standard", "MAINTENANCE", null],
+    ["Phoenix", "温哥华 · 基斯兰奴", "M6", 24, "pro", "AVAILABLE", null],
+    ["Portland", "温哥华 · 市中心", "M6", 16, "pro", "RENTED", official],
+    ["Seattle", "本拿比 · 铁道镇", "M6", 24, "pro", "AVAILABLE", null],
   ];
   const planBySlug = { economy, standard, pro } as const;
   const machines: Record<string, { id: string }> = {};
   for (const [name, location, chip, memory, slug, status, owner] of machineDefs) {
     machines[name] = await db.machine.create({
       data: {
-        name, location, country: "US", city: location.split(" · ")[0], chip: `Apple ${chip}`, memory, storage: 256, status,
+        name, location, country: "CA", city: location.split(" · ")[0], chip: `Apple ${chip}`, memory, storage: 256, status,
         planId: planBySlug[slug as keyof typeof planBySlug].id,
         ownerId: owner?.id,
         heartbeatAt: owner ? new Date(Date.now() - 4 * 60000) : null,
@@ -142,8 +142,8 @@ async function main() {
   // 官方房东刚登记、待上架的一台
   await db.machine.create({
     data: {
-      name: "Brooklyn", location: "纽约 · 布鲁克林", country: "US", city: "纽约", chip: "Apple M4", memory: 16, storage: 512,
-      status: "ONBOARDING", planId: standard.id, ownerId: official.id, heartbeatToken: "hb_brooklyn_demo",
+      name: "Oakland", location: "列治文 · 市中心", country: "CA", city: "列治文", chip: "Apple M4", memory: 16, storage: 512,
+      status: "ONBOARDING", planId: standard.id, ownerId: official.id, heartbeatToken: "hb_oakland_demo",
       checklist: json({ power: true, network: true, script: false }),
     },
   });
@@ -182,7 +182,7 @@ async function main() {
         startAt: delivered ? created : null,
         endAt: delivered ? addMonths(created, o.months) : null,
         deliveryInfo: delivered
-          ? `UU 远程设备码：${100000000 + i * 7654321}\n临时密码：已发送至交付邮箱，首次登录后请立即修改\n机器所在城市：纽约`
+          ? `UU 远程设备码：${100000000 + i * 7654321}\n临时密码：已发送至交付邮箱，首次登录后请立即修改\n机器所在城市：温哥华`
           : null,
       },
     });
@@ -373,9 +373,9 @@ async function main() {
   // ───────── FAQ ─────────
   const faqs: [string, string, string][] = [
     ["machine", "是虚拟机吗？", "不是。每台都是真实的 Mac mini 实体机，租期内只给你一个团队独享，不和别人共用。"],
-    ["machine", "机器放在哪里？", "在纽约和新泽西的住宅或办公室里，接 UPS 和家用光纤。交付邮件会写明机器所在城市。"],
+    ["machine", "机器放在哪里？", "在大温哥华地区（温哥华、本拿比、列治文）的住宅或办公室里，接 UPS 和家用光纤。交付邮件会写明机器所在城市。"],
     ["machine", "会一直开着吗？", "会。机器设置为永不睡眠，断电来电后自动开机；死机由我们在本地重启。"],
-    ["machine", "从国内连过去，延迟大概多少？", "北京到纽约的往返延迟一般在 180–250 ms。远程桌面能感觉到轻微拖影；终端里用 SSH + tmux 或 mosh 几乎无感。"],
+    ["machine", "从国内连过去，延迟大概多少？", "北京到温哥华的往返延迟一般在 130–180 ms。远程桌面能感觉到轻微拖影；终端里用 SSH + tmux 或 mosh 几乎无感。"],
     ["machine", "连接安全吗？", "UU 远程走加密通道。我们不录屏、不记录按键，进入你的环境做维护前一定先征得你同意，并保留操作记录。"],
     ["usage", "可以用来跑 AI 编程工具吗？", "可以，这正是最适合的场景。你布置任务后离开，AI 在远程机器上跑几分钟到几十分钟，延迟只影响你打字和点击的那几下。"],
     ["usage", "几个人能一起用？", "一台机器最多可以建 6 个团队成员账号。经济档建议 1 人，标准档 1–2 人，进阶档 2–4 人。"],

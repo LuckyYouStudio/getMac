@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const OPTIONS = [150, 220, 320];
+const OPTIONS = [120, 160, 250];
 
 /** 对比：远程回显（每个字等一个往返） vs mosh 式本地预显示 */
 export function LatencyDemo() {
-  const [latency, setLatency] = useState(220);
+  const [latency, setLatency] = useState(160);
   const [typed, setTyped] = useState("");
   const [remote, setRemote] = useState("");
   const [confirmed, setConfirmed] = useState(0);
@@ -37,7 +37,7 @@ export function LatencyDemo() {
   return (
     <div className="card p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm font-medium text-ink">亲手试试：0.2 秒的延迟是什么手感？</div>
+        <div className="text-sm font-medium text-ink">亲手试试：0.16 秒的延迟是什么手感？</div>
         <div className="flex gap-1 rounded-lg bg-surface-2 p-1">
           {OPTIONS.map((o) => (
             <button

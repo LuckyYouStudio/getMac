@@ -16,7 +16,7 @@ const FEATURES = [
   { t: "完整的管理员权限", d: "开发需要的软件随你装、随你配。维护账号只按约定使用，进入前先问你，并保留操作记录。" },
   { t: "开机就能写代码", d: "Homebrew、Git、Node.js、Python、Xcode 命令行工具、tmux、mosh 均已预装，登录自己的账号即可开工。" },
   { t: "UU 远程一键交付", d: "交付时附上 UU 远程的连接信息。想用 Tailscale 或 SSH，进入桌面后自己配置即可。" },
-  { t: "纽约本地有人照看", d: "系统更新、断电恢复、死机重启、硬件换机都由我们在当地处理，机器 24 小时不休眠。" },
+  { t: "温哥华本地有人照看", d: "系统更新、断电恢复、死机重启、硬件换机都由我们在当地处理，机器 24 小时不休眠。" },
 ];
 
 const STEPS = [
@@ -56,13 +56,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <section className="relative overflow-hidden border-b border-line bg-gradient-to-b from-brand-soft/60 to-bg">
         <div className="container-page grid items-center gap-10 py-16 md:grid-cols-[1.1fr_1fr] md:py-24">
           <div>
-            <div className="eyebrow">远程 Mac · 中美跨境小团队</div>
+            <div className="eyebrow">远程 Mac · 跨境小团队</div>
             <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-tight text-navy md:text-5xl">
               你的远程 Mac，<br />有人照看。
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-ink-soft">
               一台真实的 Mac mini，只给你一个团队用。完整管理员权限，常用开发环境已装好。
-              在国内连上它，就像在纽约多了一张永远开着的工位。
+              在国内连上它，就像在温哥华多了一张永远开着的工位。
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link href="/pricing#plans" className="btn-primary btn-lg">立即开通</Link>
@@ -145,7 +145,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </p>
         <div className="mt-10 grid gap-4 md:grid-cols-3">
           {[
-            { t: "你描述任务", d: "约 1–2 分钟", n: "每次按键多约 0.2 秒" },
+            { t: "你描述任务", d: "约 1–2 分钟", n: "每次按键多约 0.16 秒" },
             { t: "AI 在远程 Mac 上执行", d: "5–30 分钟", n: "读取项目 · 修改代码 · 跑测试 —— 和延迟无关" },
             { t: "你检查结果", d: "约 2–5 分钟", n: "看 diff、提交、布置下一个任务" },
           ].map((s, i) => (

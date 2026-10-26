@@ -105,7 +105,7 @@ export default function TermsPage() {
 
       <h2 id="t11" className="scroll-mt-24">11. 条款变更与适用法律</h2>
       <p>条款更新时我们会在本页标注日期，重大变更会提前在站内公告。更新后继续使用服务，视为接受新条款；已付费的当期订单按下单时的价格执行。</p>
-      <p>本条款适用美国纽约州法律。如有疑问，请发邮件到 <a className="text-brand hover:underline" href={`mailto:${SITE.email}`}>{SITE.email}</a>。</p>
+      <p>本条款适用加拿大不列颠哥伦比亚省法律。如有疑问，请发邮件到 <a className="text-brand hover:underline" href={`mailto:${SITE.email}`}>{SITE.email}</a>。</p>
     </DocPage>
   );
 }

@@ -24,7 +24,7 @@ async function ownMachine(id: string, userId: string) {
 }
 
 const specSchema = z.object({
-  location: z.string().trim().min(2, "请填写所在地，如“纽约 · 皇后区”").max(40),
+  location: z.string().trim().min(2, "请填写所在地，如“本拿比 · 铁道镇”").max(40),
   city: z.string().trim().min(1, "请填写城市").max(30),
   chip: z.enum(CHIPS, { message: "请选择芯片" }),
   memory: z.coerce.number().refine((v) => MEMORY_OPTIONS.includes(v), "请选择内存"),

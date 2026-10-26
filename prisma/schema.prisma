@@ -74,7 +74,7 @@ model Plan {
 model Machine {
   id        String   @id @default(cuid())
   name      String   @unique // Austin / Boston ...
-  location  String   // 展示用所在地，如“纽约 · 皇后区”
+  location  String   // 展示用所在地，如“温哥华 · 市中心”
   country   String   @default("US")
   city      String?
   chip      String

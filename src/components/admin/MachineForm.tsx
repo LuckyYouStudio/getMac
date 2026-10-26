@@ -18,7 +18,7 @@ export function MachineForm({
         <input name="name" list="city-names" className="input" required defaultValue={m?.name} />
         <datalist id="city-names">{suggestions.map((c) => <option key={c} value={c} />)}</datalist>
       </label>
-      <label className="block"><span className="label">展示位置</span><input name="location" className="input" required defaultValue={m?.location ?? "纽约 · 曼哈顿"} /></label>
+      <label className="block"><span className="label">展示位置</span><input name="location" className="input" required defaultValue={m?.location ?? "温哥华 · 市中心"} /></label>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
           <span className="label">国家/地区</span>

@@ -9,11 +9,11 @@ export function MachineSpecFields({ plans, d = {}, disabled = false }: { plans: 
   const chip = d.chip?.replace(/^Apple\s+/, "");
   return (
     <fieldset disabled={disabled} className="grid gap-4 sm:grid-cols-2 disabled:opacity-60">
-      <Field label="所在地（展示给租客）" hint="写到区一级即可，例如“纽约 · 皇后区”，不要写街道门牌。">
-        <input name="location" className="input" required defaultValue={d.location} placeholder="纽约 · 皇后区" />
+      <Field label="所在地（展示给租客）" hint="写到区一级即可，例如“本拿比 · 铁道镇”，不要写街道门牌。">
+        <input name="location" className="input" required defaultValue={d.location} placeholder="本拿比 · 铁道镇" />
       </Field>
       <Field label="城市">
-        <input name="city" className="input" required defaultValue={d.city ?? ""} placeholder="纽约" />
+        <input name="city" className="input" required defaultValue={d.city ?? ""} placeholder="本拿比" />
       </Field>
       <Field label="芯片">
         <select name="chip" className="input" required defaultValue={chip ?? ""}>
